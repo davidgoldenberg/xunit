@@ -78,6 +78,7 @@
     <Compile Include="..\xunit.runner.msbuild\Utility\TeamCityDisplayNameFormatter.cs">
       <Link>Utility\TeamCityDisplayNameFormatter.cs</Link>
     </Compile>
+    <Compile Include="Visitors\TestMessageVisitorObserver.cs" />
     <Compile Include="CommandLine.cs" />
     <Compile Include="Config\TransformConfigurationElement.cs" />
     <Compile Include="Config\TransformConfigurationElementCollection.cs" />

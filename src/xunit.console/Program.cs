@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+
+using Xunit.Abstractions;
+using Xunit.ConsoleClient.Visitors;
 
 namespace Xunit.ConsoleClient
 {
@@ -254,14 +258,30 @@ namespace Xunit.ConsoleClient
             return failed ? 1 : completionMessages.Values.Sum(summary => summary.Failed);
         }
 
-        static XmlTestExecutionVisitor CreateVisitor(object consoleLock, bool quiet, string defaultDirectory, XElement assemblyElement, bool teamCity, bool appVeyor)
+        static TestMessageVisitor<IMessageSinkMessage> CreateVisitor(object consoleLock, bool quiet, string defaultDirectory, XElement assemblyElement, bool teamCity, bool appVeyor)
         {
-            if (teamCity)
-                return new TeamCityVisitor(consoleLogger, assemblyElement, () => cancel, displayNameFormatter: teamCityDisplayNameFormatter);
-            else if (appVeyor)
-                return new AppVeyorVisitor(consoleLock, defaultDirectory, assemblyElement, () => cancel, completionMessages);
+            TestMessageVisitor visitor = null;
 
-            return new StandardOutputVisitor(consoleLock, quiet, defaultDirectory, assemblyElement, () => cancel, completionMessages);
+            if (teamCity)
+                visitor = new TeamCityVisitor(consoleLogger, assemblyElement, () => cancel, displayNameFormatter: teamCityDisplayNameFormatter);
+            else if (appVeyor)
+                visitor = new AppVeyorVisitor(consoleLock, defaultDirectory, assemblyElement, () => cancel, completionMessages);
+            else
+                visitor = new StandardOutputVisitor(consoleLock, quiet, defaultDirectory, assemblyElement, () => cancel, completionMessages);
+
+            var assembly = typeof(Program).Assembly;
+            var visitors = new List<TestMessageVisitor>();
+            var dir = Path.GetDirectoryName(assembly.Location) ?? Environment.CurrentDirectory;
+            foreach (var file in Directory.GetFiles(dir, "xunit.extensions*.dll"))
+            {
+                visitors.AddRange(Assembly.LoadFile(file)
+                    .GetTypes()
+                    .Where(t => t.IsSubclassOf(typeof(TestMessageVisitor)))
+                    .Select(t => (TestMessageVisitor)Activator.CreateInstance(t)).ToArray());
+            }
+            visitors.Add(visitor);
+
+            return new TestMessageVisitorObserver<IMessageSinkMessage>(visitors.ToArray());
         }
 
         static XElement ExecuteAssembly(object consoleLock, string defaultDirectory, XunitProjectAssembly assembly, bool quiet, bool needsXml, bool teamCity, bool appVeyor, bool? parallelizeTestCollections, int? maxThreadCount, XunitFilters filters)
